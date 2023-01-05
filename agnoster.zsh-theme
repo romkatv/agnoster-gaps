@@ -30,13 +30,11 @@ typeset -aHg AGNOSTER_PROMPT_SEGMENTS=(
     prompt_virtualenv
     prompt_dir
     prompt_git
-    prompt_end
 )
 
 ### Segment drawing
 # A few utility functions to make it easy and re-usable to draw segmented prompts
 
-CURRENT_BG='NONE'
 if [[ -z "$PRIMARY_FG" ]]; then
 	PRIMARY_FG=black
 fi
@@ -54,27 +52,17 @@ GEAR="\u2699"
 # Takes two arguments, background and foreground. Both can be omitted,
 # rendering default background/foreground.
 prompt_segment() {
-  local bg fg
-  [[ -n $1 ]] && bg="%K{$1}" || bg="%k"
-  [[ -n $2 ]] && fg="%F{$2}" || fg="%f"
-  if [[ $CURRENT_BG != 'NONE' && $1 != $CURRENT_BG ]]; then
-    print -n "%{$bg%F{$CURRENT_BG}%}$SEGMENT_SEPARATOR%{$fg%}"
-  else
-    print -n "%{$bg%}%{$fg%}"
+  local bg=${1:-default} fg=${2:-default} content=$3
+  if [[ is_first_segment -eq 0 && $bg != default ]]; then
+    print -n "%S%k%F{$bg}$SEGMENT_SEPARATOR%s"
   fi
-  CURRENT_BG=$1
-  [[ -n $3 ]] && print -n $3
-}
-
-# End the prompt, closing any open segments
-prompt_end() {
-  if [[ -n $CURRENT_BG ]]; then
-    print -n "%{%k%F{$CURRENT_BG}%}$SEGMENT_SEPARATOR"
+  print -n "%K{$bg}%F{$fg} $content "
+  if [[ $bg != default ]]; then
+    print -n "%k%F{$bg}$SEGMENT_SEPARATOR%f"
   else
-    print -n "%{%k%}"
+    print -n "%f"
   fi
-  print -n "%{%f%}"
-  CURRENT_BG=''
+  is_first_segment=0
 }
 
 ### Prompt components
@@ -85,7 +73,7 @@ prompt_context() {
   local user=`whoami`
 
   if [[ "$user" != "$DEFAULT_USER" || -n "$SSH_CONNECTION" ]]; then
-    prompt_segment $PRIMARY_FG default " %(!.%{%F{yellow}%}.)$user@%m "
+    prompt_segment $PRIMARY_FG default "%(!.%{%F{yellow}%}.)${user//\%/%%}@%m"
   fi
 }
 
@@ -95,7 +83,7 @@ prompt_git() {
   is_dirty() {
     test -n "$(git status --porcelain --ignore-submodules)"
   }
-  ref="$vcs_info_msg_0_"
+  ref="${vcs_info_msg_0_//\%/%%}"
   if [[ -n "$ref" ]]; then
     if is_dirty; then
       color=yellow
@@ -109,14 +97,13 @@ prompt_git() {
     else
       ref="$DETACHED ${ref/.../}"
     fi
-    prompt_segment $color $PRIMARY_FG
-    print -n " $ref"
+    prompt_segment $color $PRIMARY_FG "$ref"
   fi
 }
 
 # Dir: current working directory
 prompt_dir() {
-  prompt_segment blue $PRIMARY_FG ' %~ '
+  prompt_segment blue $PRIMARY_FG '%~'
 }
 
 # Status:
@@ -130,22 +117,20 @@ prompt_status() {
   [[ $UID -eq 0 ]] && symbols+="%{%F{yellow}%}$LIGHTNING"
   [[ $(jobs -l | wc -l) -gt 0 ]] && symbols+="%{%F{cyan}%}$GEAR"
 
-  [[ -n "$symbols" ]] && prompt_segment $PRIMARY_FG default " $symbols "
+  [[ -n "$symbols" ]] && prompt_segment $PRIMARY_FG default "$symbols"
 }
 
 # Display current virtual environment
 prompt_virtualenv() {
   if [[ -n $VIRTUAL_ENV ]]; then
-    color=cyan
-    prompt_segment $color $PRIMARY_FG
-    print -Pn " $(basename $VIRTUAL_ENV) "
+    prompt_segment cyan $PRIMARY_FG "${${VIRTUAL_ENV:t}//\%/%%}"
   fi
 }
 
 ## Main prompt
 prompt_agnoster_main() {
   RETVAL=$?
-  CURRENT_BG='NONE'
+  local -i is_first_segment=1
   for prompt_segment in "${AGNOSTER_PROMPT_SEGMENTS[@]}"; do
     [[ -n $prompt_segment ]] && $prompt_segment
   done
